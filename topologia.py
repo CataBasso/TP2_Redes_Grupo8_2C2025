@@ -40,6 +40,9 @@ class ChainTopo(Topo):
         self.addLink(h3, switches[-1])
         self.addLink(h4, switches[-1])
 
+# Crea la topología en cadena con n switches, 
+# Arranca Mininet conectando los switches a un RemoteController en 127.0.0.1:6633, 
+# Abre la CLI para interacción y detiene la red al salir.
 def runChain(n):
     topo = ChainTopo(n=int(n))
     c0 = RemoteController('c0', ip='127.0.0.1', port=6633)

@@ -5,14 +5,19 @@ from pox.lib.packet.ethernet import ethernet
 
 log = core.getLogger("l2_learning_custom")
 
-# Tabla: dpid -> { MAC -> puerto }
+# Tabla: dpid -> { MAC -> puerto } 
+# Almacena, por cada switch (dpid), a que puerto está conectada cada MAC
 mac_to_port = {}
 
+# Se ejecuta cuando un switch se conecta al controlador
+# Inicializa mac_to_port[dpid] = {} y registra en log que el switch se conectó. 
+# Prepara la tabla de aprendizaje para ese switch.
 def _handle_ConnectionUp(event):
     dpid = event.connection.dpid
     mac_to_port[dpid] = {}
     log.info("Switch %s connected", dpid)
 
+# Flujo principal al recibir paquetes sin matching flow
 def _handle_PacketIn(event):
     dpid = event.connection.dpid
     packet = event.parsed
@@ -51,9 +56,11 @@ def _handle_PacketIn(event):
         event.connection.send(msg)
         log.debug("Flooding packet on switch %s", dpid)
 
+# Logging para informar cambios de estado de puertos
 def _handle_PortStatus(event):
     log.info("Port status change: %s", event)
 
+# Registro de listeners
 def launch():
     core.openflow.addListenerByName("ConnectionUp", _handle_ConnectionUp)
     core.openflow.addListenerByName("PacketIn", _handle_PacketIn)
