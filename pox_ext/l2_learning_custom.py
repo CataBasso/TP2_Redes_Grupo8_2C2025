@@ -1,7 +1,9 @@
-# pox/ext/l2_learning_custom.py
 from pox.core import core
 import pox.openflow.libopenflow_01 as of
 from pox.lib.packet.ethernet import ethernet
+import pox.lib.packet as pkt
+import json
+import os
 
 log = core.getLogger("l2_learning_custom")
 
@@ -244,6 +246,15 @@ def _handle_ConnectionUp(event):
         log.info("*** Este switch (%s) es el FIREWALL ***", switch_name)
 
 def _handle_PacketIn(event):
+    """
+    Maneja los paquetes que llegan al controlador sin matching flow.
+    
+    Aprende las MACs de los hosts, verifica las reglas del firewall,
+    y instala flows de forwarding o descarte según corresponda.
+    
+    Args:
+        event: Evento PacketIn del switch
+    """
     dpid = event.connection.dpid
     packet = event.parsed
     in_port = event.port
@@ -256,37 +267,116 @@ def _handle_PacketIn(event):
     src = packet.src
     dst = packet.dst
 
-    # Aprender MAC de origen en este switch
-    mac_to_port[dpid][src] = in_port
-    log.debug("PacketIn at switch %s: src=%s dst=%s in_port=%s", dpid, src, dst, in_port)
+    ipp = packet.find('ipv4')
+    if ipp and ipp.parsed:
+        src_ip = str(ipp.srcip)
+        dst_ip = str(ipp.dstip)
+        
+        if src_ip.startswith("10.0.0."):
+            try:
+                host_num = int(src_ip.split(".")[-1])
+                if 1 <= host_num <= 4:
+                    host_name = f"h{host_num}"
+                    learn_host_mac(src, host_name)
+            except:
+                pass
+        
+        if dst_ip.startswith("10.0.0."):
+            try:
+                host_num = int(dst_ip.split(".")[-1])
+                if 1 <= host_num <= 4:
+                    host_name = f"h{host_num}"
+                    learn_host_mac(dst, host_name)
+            except:
+                pass
+    
+    arpp = packet.find('arp')
+    if arpp and arpp.parsed:
+        if arpp.opcode == arpp.REQUEST or arpp.opcode == arpp.REPLY:
+            if arpp.protosrc:
+                src_ip = str(arpp.protosrc)
+                if src_ip.startswith("10.0.0."):
+                    try:
+                        host_num = int(src_ip.split(".")[-1])
+                        if 1 <= host_num <= 4:
+                            host_name = f"h{host_num}"
+                            learn_host_mac(src, host_name)
+                    except:
+                        pass
 
-    # Si conocemos la MAC destino, instalamos flujo hacia ese puerto
+    if check_firewall_rules(packet, src, dst, dpid):
+        fm = of.ofp_flow_mod()
+        fm.match = of.ofp_match.from_packet(packet)
+        fm.match.tp_src = 0
+        fm.buffer_id = event.ofp.buffer_id
+        fm.idle_timeout = 120
+        fm.hard_timeout = 300
+        fm.priority = 65535
+        event.connection.send(fm)
+        
+        tcpp = packet.find('tcp')
+        udpp = packet.find('udp')
+        if udpp and udpp.parsed:
+            proto_str = "UDP"
+            port_str = str(udpp.dstport)
+        elif tcpp and tcpp.parsed:
+            proto_str = "TCP"
+            port_str = str(tcpp.dstport)
+        else:
+            proto_str = "ICMP/Other"
+            port_str = "N/A"
+        
+        log.warning("FIREWALL: Flow drop instalado en %s - proto=%s port=%s", 
+                   switch_names.get(dpid, dpid), proto_str, port_str)
+        return
+
+    mac_to_port[dpid][src] = in_port
+    
+    switch_name = switch_names.get(dpid, dpid)
+    is_firewall = is_firewall_switch(dpid)
+    log.debug("PacketIn at switch %s (firewall=%s): src=%s dst=%s in_port=%s", 
+              switch_name, is_firewall, src, dst, in_port)
+
     if dst in mac_to_port[dpid]:
         out_port = mac_to_port[dpid][dst]
         fm = of.ofp_flow_mod()
+        fm.priority = 100
         fm.match.dl_src = src
         fm.match.dl_dst = dst
         fm.match.in_port = in_port
         fm.actions.append(of.ofp_action_output(port=out_port))
         fm.idle_timeout = 30
         fm.hard_timeout = 60
-        fm.data = event.ofp  # importante: reenvía el paquete actual
+        fm.data = event.ofp
         event.connection.send(fm)
-        log.info("Instalado flow en switch %s: %s -> %s (puerto %s)", dpid, src, dst, out_port)
+        log.info("Instalado flow en switch %s: %s -> %s (puerto %s)", 
+                switch_names.get(dpid, dpid), src, dst, out_port)
     else:
-        # Si no conocemos el destino, flood
         msg = of.ofp_packet_out(data=event.ofp)
         msg.actions.append(of.ofp_action_output(port=of.OFPP_FLOOD))
         msg.in_port = in_port
         event.connection.send(msg)
-        log.debug("Flooding packet on switch %s", dpid)
+        log.debug("Flooding packet on switch %s", switch_names.get(dpid, dpid))
 
-# Logging para informar cambios de estado de puertos
 def _handle_PortStatus(event):
+    """
+    Maneja los cambios de estado de los puertos de los switches.
+    
+    Args:
+        event: Evento de cambio de estado de puerto
+    """
     log.info("Port status change: %s", event)
 
-# Registro de listeners
 def launch():
+    """
+    Inicializa el módulo l2_learning_custom.
+    
+    Carga la configuración del firewall y registra los listeners
+    para los eventos de OpenFlow.
+    """
+    reset_switch_counter()
+    load_firewall_config()
+    
     core.openflow.addListenerByName("ConnectionUp", _handle_ConnectionUp)
     core.openflow.addListenerByName("PacketIn", _handle_PacketIn)
     core.openflow.addListenerByName("PortStatus", _handle_PortStatus)
