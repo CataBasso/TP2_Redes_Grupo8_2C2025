@@ -1,0 +1,30 @@
+{
+  "firewall_switch": "s2",
+  "rules": [
+    {
+      "id": 1,
+      "description": "Descartar todos los mensajes cuyo puerto destino sea 80",
+      "enabled": true,
+      "type": "port_block",
+      "dst_port": 80
+    },
+    {
+      "id": 2,
+      "description": "Descartar mensajes del host 1 (h1) con puerto destino 5001 y protocolo UDP",
+      "enabled": true,
+      "type": "host_port_protocol_block",
+      "src_host": "h1",
+      "dst_port": 5001,
+      "protocol": "UDP"
+    },
+    {
+      "id": 3,
+      "description": "Bloquear comunicación entre dos hosts específicos",
+      "enabled": true,
+      "type": "host_pair_block",
+      "host1": "h1",
+      "host2": "h3"
+    }
+  ]
+}
+
