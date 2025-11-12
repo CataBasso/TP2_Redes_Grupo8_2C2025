@@ -1,3 +1,4 @@
+# pox/ext/l2_learning_custom.py
 from pox.core import core
 import pox.openflow.libopenflow_01 as of
 from pox.lib.packet.ethernet import ethernet
@@ -12,7 +13,7 @@ switch_names = {}
 switch_counter = 0
 firewall_config = None
 firewall_switch_dpid = None
-firewall_flows_installed = set()
+firewall_flows_installed = set()  # Track installed firewall flows to avoid duplicates
 
 def reset_switch_counter():
     """
@@ -305,15 +306,31 @@ def _handle_PacketIn(event):
                         pass
 
     if check_firewall_rules(packet, src, dst, dpid):
+        # Instalar flow de bloqueo en el switch (siguiendo ejemplo de l2_learning.py)
         fm = of.ofp_flow_mod()
+        
+        # Crear match usando from_packet SIN in_port (para coincidir en cualquier puerto)
         fm.match = of.ofp_match.from_packet(packet)
-        fm.match.tp_src = 0
+        
+        # Quitar tp_src del match para que coincida con cualquier puerto fuente
+        # Solo nos importa el puerto destino
+        fm.match.tp_src = 0  # 0 significa wildcard en OpenFlow 1.0
+        
+        # Incluir buffer_id para descartar el paquete actual también
         fm.buffer_id = event.ofp.buffer_id
+        
+        # Timeouts
         fm.idle_timeout = 120
         fm.hard_timeout = 300
+        
+        # Prioridad alta para que prevalezca sobre flows de forwarding
         fm.priority = 65535
+        
+        # NO agregamos acciones = drop
+        # Enviar al switch
         event.connection.send(fm)
         
+        # Log para debugging
         tcpp = packet.find('tcp')
         udpp = packet.find('udp')
         if udpp and udpp.parsed:
