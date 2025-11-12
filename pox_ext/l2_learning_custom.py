@@ -220,11 +220,29 @@ def check_firewall_rules(packet, src_mac, dst_mac, dpid):
     return False
 
 def _handle_ConnectionUp(event):
+    """
+    Maneja el evento de conexión de un switch al controlador.
+    
+    Inicializa la tabla de aprendizaje para el switch, le asigna un nombre
+    basado en el orden de conexión (s1, s2, etc.) y verifica si es el switch
+    del firewall.
+    
+    Args:
+        event: Evento de conexión del switch
+    """
+    global switch_counter
     dpid = event.connection.dpid
     mac_to_port[dpid] = {}
-    log.info("Switch %s connected", dpid)
+    
+    switch_counter += 1
+    switch_name = f"s{switch_counter}"
+    switch_names[dpid] = switch_name
+    
+    log.info("Switch %s (dpid=%s) connected", switch_name, dpid)
+    
+    if is_firewall_switch(dpid):
+        log.info("*** Este switch (%s) es el FIREWALL ***", switch_name)
 
-# Flujo principal al recibir paquetes sin matching flow
 def _handle_PacketIn(event):
     dpid = event.connection.dpid
     packet = event.parsed
