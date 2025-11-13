@@ -8,14 +8,12 @@
 git clone https://github.com/noxrepo/pox.git
 ```
 
-### 2. Agregar la ruta del L2-learning a POX
+### 2. Agregar la ruta del módulo l2-learning al entorno de Python
 
 ```bash
-cd pox
-cd ext
-export PYTHONPATH=$PYTHONPATH:/mnt/d/fiuba/redes/TP2_Redes_Grupo8_2C2025/pox_ext
-cd ..
+export PYTHONPATH=$PYTHONPATH:/dir/a/la/carpeta/TP2_Redes_Grupo8_2C2025/pox_ext
 ```
+
 ## Probar correcto funcionamiento de la topologia:
 
 ### 1. Levantar POX:
@@ -51,15 +49,17 @@ El firewall está configurado en el switch `s2` (configurable en `firewall_rules
 
 #### 1. Levantar POX (en una terminal):
 ```bash
-cd pox
-export PYTHONPATH=$PYTHONPATH:$(pwd)/../pox_ext
+export PYTHONPATH=$PYTHONPATH:/dir/a/la/carpeta/TP2_Redes_Grupo8_2C2025/pox_ext
+
+# Desde el dir /pox
 ./pox.py log.level --DEBUG l2_learning_custom 2>&1 | tee ../pox.log
 ```
 
 O para guardar solo en archivo (sin mostrar en pantalla):
 ```bash
-cd pox
-export PYTHONPATH=$PYTHONPATH:$(pwd)/../pox_ext
+export PYTHONPATH=$PYTHONPATH:/dir/a/la/carpeta/TP2_Redes_Grupo8_2C2025/pox_ext
+
+# Desde el dir /pox
 ./pox.py log.level --DEBUG l2_learning_custom > ../pox.log 2>&1 &
 ```
 
@@ -67,6 +67,7 @@ Los logs se guardarán en `pox.log` en el directorio raíz del proyecto.
 
 #### 2. Levantar Mininet (en otra terminal):
 ```bash
+# Desde el root del tp
 sudo python3 topologia.py 4
 ```
 
