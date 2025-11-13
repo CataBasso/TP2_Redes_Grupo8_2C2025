@@ -11,7 +11,10 @@ git clone https://github.com/noxrepo/pox.git
 ### 2. Agregar la ruta del módulo l2-learning al entorno de Python
 
 ```bash
-export PYTHONPATH=$PYTHONPATH:/dir/a/la/carpeta/TP2_Redes_Grupo8_2C2025/pox_ext
+cd pox
+cd ext
+export PYTHONPATH=$PYTHONPATH:/dir-a-carpeta/TP2_Redes_Grupo8_2C2025/pox_ext
+cd ..
 ```
 
 ## Probar correcto funcionamiento de la topologia:
@@ -36,6 +39,7 @@ sudo python3 topologia.py n
 # Desde la CLI de Mininet
 mininet> pingall
 ```
+Deberian poder comunicarse todos los hosts menos los dos que estan incomunicados por la Regla 3.
 
 ## Probar el Firewall:
 
@@ -44,6 +48,13 @@ El firewall está configurado en el switch `s2` (configurable en `firewall_rules
 1. **Regla 1**: Bloquear todos los paquetes con puerto destino 80 (HTTP)
 2. **Regla 2**: Bloquear paquetes de h1 a puerto 5001 UDP
 3. **Regla 3**: Bloquear comunicación entre h1 y h3
+
+### Limpieza de mininet y POX viejo:
+```bash
+sudo mn -c
+pkill -f "pox/pox.py" || true
+rm -f pox.log || true
+```
 
 ### Pasos para probar:
 
@@ -56,6 +67,7 @@ export PYTHONPATH=$PYTHONPATH:/dir/a/la/carpeta/TP2_Redes_Grupo8_2C2025/pox_ext
 ```
 
 O para guardar solo en archivo (sin mostrar en pantalla):
+
 ```bash
 export PYTHONPATH=$PYTHONPATH:/dir/a/la/carpeta/TP2_Redes_Grupo8_2C2025/pox_ext
 
@@ -155,6 +167,19 @@ mininet> h3 ping -c 3 10.0.0.2
 
 # h3 -> h4 (debe funcionar)
 mininet> h3 ping -c 3 10.0.0.4
+```
+
+### Verificar las Reglas con el script automatico:
+
+#### Terminal 1: Levantar pox
+```bash
+# Desde /pox
+./pox.py log.level --DEBUG l2_learning_custom
+```
+#### Terminal 2: Ejecutar script
+```bash
+# Siendo n = cantidad de switches
+sudo python3 test_firewall.py n
 ```
 
 ### Notas importantes:
