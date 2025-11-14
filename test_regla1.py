@@ -16,17 +16,21 @@ def run_tests(n):
     net = Mininet(topo=topo, controller=None, switch=OVSSwitch)
     net.addController(c0)
 
-    info("Starting Mininet...\n")
+    info("\n=== Iniciando Mininet ===\n")
     net.start()
     time.sleep(1)
 
-    info("Getting hosts...\n")
-    try:
-        h1, h2, h3, h4 = net.get('h1','h2','h3','h4')
-    except Exception as e:
-        info("Error: hosts not found: %s\n" % e)
-        net.stop()
-        return
+    h1, h2, h3, h4 = net.get('h1','h2','h3','h4')
+
+    # Asignar IPv6
+    for i,h in enumerate([h1,h2,h3,h4], start=1):
+        h.cmd(f"ip -6 addr add fd00::{i}/64 dev {h.name}-eth0 || true")
+
+    # Warm-up ARP + aprendizaje
+    for h in (h1,h2,h3,h4):
+        h.cmd("arp -n >/dev/null 2>&1")
+    h1.cmd("ping -c1 10.0.0.3 >/dev/null 2>&1 || true")
+    time.sleep(0.5)
 
     # Forzar aprendizaje de MACs/IPs (ping/ARP)
     info("Forzando aprendizaje de MACs (ping/arp)...\n")
@@ -103,6 +107,79 @@ def run_tests(n):
     info("Resultado: %s\n" % ("BLOCKED" if blocked else "ALLOWED"))
 
     h3.cmd("pkill -f 'nc -u -6 -l 80' || true")
+
+    #########################
+    # CASOS DE ÉXITO (puertos != 80)
+    #########################
+
+    info("\n=======================================\n")
+    info("   CASOS DE ÉXITO — PUERTOS PERMITIDOS\n")
+    info("=======================================\n")
+
+    # 1) IPv4 TCP permitido (puerto 8080)
+    info("\nTEST 1.5: IPv4 + TCP (puerto 8080) debe PERMITIRSE\n")
+    h4.cmd("pkill -f 'http.server' || true")
+    h4.cmd("python3 -m http.server 8080 >/tmp/http8080.log 2>&1 &")
+    time.sleep(0.5)
+
+    output = h1.cmd("timeout 3 curl -s -I http://10.0.0.4:8080 || true")
+    allowed = (output.strip() != "")
+    results.append(("IPv4 TCP OK (8080)", allowed))
+    info("Resultado: %s\n" % ("ALLOWED" if allowed else "BLOCKED"))
+    h4.cmd("pkill -f 'http.server' || true")
+
+    # 2) IPv4 UDP permitido (puerto 8080)
+    info("\nTEST 1.6: IPv4 + UDP (puerto 8080) debe PERMITIRSE\n")
+    h4.cmd("rm -f /tmp/udp8080.log")
+    h4.cmd("pkill -f 'nc -u -l 8080' || true")
+    h4.cmd("nohup nc -u -l 8080 >/tmp/udp8080.log 2>&1 &")
+    time.sleep(0.5)
+
+    h1.cmd("echo 'PING_OK' | nc -u -w2 10.0.0.4 8080 || true")
+    time.sleep(0.4)
+
+    received = h4.cmd("grep -q PING_OK /tmp/udp8080.log && echo OK || echo NO").strip()
+    allowed = (received == "OK")
+    results.append(("IPv4 UDP OK (8080)", allowed))
+    info("Resultado: %s\n" % ("ALLOWED" if allowed else "BLOCKED"))
+    h4.cmd("pkill -f 'nc -u -l 8080' || true")
+
+    # 3) IPv6 TCP permitido (puerto 8080)
+    info("\nTEST 1.7: IPv6 + TCP (puerto 8080) debe PERMITIRSE\n")
+    h4.cmd("pkill -9 -f 'http.server' || true")
+    time.sleep(0.2)
+
+    h4.cmd("python3 -m http.server 8080 --bind fd00::4 >/tmp/http8080_v6.log 2>&1 &")
+    time.sleep(0.7)
+
+    output = h1.cmd("timeout 3 curl -g -6 -s -I http://[fd00::4]:8080 || true")
+
+    allowed = (output.strip() != "")
+    results.append(("IPv6 TCP OK (8080)", allowed))
+    info("Resultado: %s\n" % ("ALLOWED" if allowed else "BLOCKED"))
+
+    h4.cmd("pkill -9 -f 'http.server' || true")
+
+    # 4) IPv6 UDP permitido (puerto 8080)
+    info("\nTEST 1.8: IPv6 + UDP (puerto 8080) debe PERMITIRSE\n")
+    h4.cmd("rm -f /tmp/udp8080_v6.log")
+    h4.cmd("pkill -9 -f 'nc -u -6 -l 8080' || true")
+    time.sleep(0.2)
+
+    h4.cmd("nohup nc -u -6 -l 8080 >/tmp/udp8080_v6.log 2>&1 &")
+    time.sleep(0.7)
+
+    h1.cmd("echo 'PINGV6_OK' | nc -u -6 -w2 fd00::4 8080 || true")
+    time.sleep(0.6)
+
+    received = h4.cmd("grep -q PINGV6_OK /tmp/udp8080_v6.log && echo OK || echo NO").strip()
+    allowed = (received == "OK")
+    results.append(("IPv6 UDP OK (8080)", allowed))
+
+    info("Resultado: %s\n" % ("ALLOWED" if allowed else "BLOCKED"))
+
+    h4.cmd("pkill -9 -f 'nc -u -6 -l 8080' || true")
+
 
     # Resultados finales
     info("\n==============================\n")

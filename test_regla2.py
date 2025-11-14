@@ -14,18 +14,20 @@ def run_tests(n):
     net = Mininet(topo=topo, controller=None, switch=OVSSwitch)
     net.addController(c0)
 
-    info("Starting Mininet...\n")
+    info("\n=== Iniciando Mininet ===\n")
     net.start()
     time.sleep(1)
 
-    info("Getting hosts...\n")
-    h1, h2, h3, h4 = net.get('h1', 'h2', 'h3', 'h4')
+    h1, h2, h3, h4 = net.get('h1','h2','h3','h4')
 
-    # Forzar aprendizaje de MACs / flows
-    info("Forzando aprendizaje inicial...\n")
-    h1.cmd("ping -c1 10.0.0.2 >/dev/null 2>&1 || true")
-    h2.cmd("ping -c1 10.0.0.3 >/dev/null 2>&1 || true")
-    h3.cmd("ping -c1 10.0.0.4 >/dev/null 2>&1 || true")
+    # Asignar IPv6
+    for i,h in enumerate([h1,h2,h3,h4], start=1):
+        h.cmd(f"ip -6 addr add fd00::{i}/64 dev {h.name}-eth0 || true")
+
+    # Warm-up ARP + aprendizaje
+    for h in (h1,h2,h3,h4):
+        h.cmd("arp -n >/dev/null 2>&1")
+    h1.cmd("ping -c1 10.0.0.3 >/dev/null 2>&1 || true")
     time.sleep(0.5)
 
     results = []
@@ -89,6 +91,10 @@ def run_tests(n):
     blocked = (received != "OK")
     results.append(("IPv6 UDP", blocked))
     info(f"Resultado: {'BLOCKED' if blocked else 'ALLOWED'} (received={received})\n")
+
+    info("\n=======================================\n")
+    info("   CASOS DE ÉXITO\n")
+    info("=======================================\n")
 
     # TEST 2.3 — IPv4 TCP → DEBE PERMITIRSE
     info("\nTEST 2.3: IPv4 + TCP (h1 → h4:5001) debe PERMITIRSE\n")
