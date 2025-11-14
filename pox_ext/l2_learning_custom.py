@@ -202,14 +202,6 @@ def check_firewall_rules(packet, src_mac, dst_mac, dpid):
                         else:
                             log.info("FIREWALL: Regla 2 UDP - No coincide: dstport=%s != %d o no parseado", 
                                     udpp.dstport if udpp and udpp.parsed else None, dst_port)
-                    elif protocol == "TCP":
-                        tcpp = packet.find('tcp')
-                        log.debug("FIREWALL: Regla 2 TCP - tcpp=%s, parsed=%s, dstport=%s", 
-                                 tcpp, tcpp.parsed if tcpp else None, tcpp.dstport if tcpp and tcpp.parsed else None)
-                        if tcpp and tcpp.parsed and tcpp.dstport == dst_port:
-                            log.warning("FIREWALL: Paquete bloqueado - Regla %d: %s -> puerto %d (TCP)", 
-                                       rule.get("id"), src_host, dst_port)
-                            return True
         
         if rule_type == "host_pair_block":
             host1 = rule.get("host1")
@@ -329,46 +321,38 @@ def _handle_PacketIn(event):
                         pass
 
     if check_firewall_rules(packet, src, dst, dpid):
-        # Instalar flow de bloqueo en el switch (siguiendo ejemplo de l2_learning.py)
+        ipv4p = packet.find('ipv4')
+        ipv6p = packet.find('ipv6')
+
+        # Preparar flow_mod base para IPv4 drops
         fm = of.ofp_flow_mod()
-        
-        # Crear match usando from_packet SIN in_port (para coincidir en cualquier puerto)
-        fm.match = of.ofp_match.from_packet(packet)
-        
-        # Quitar tp_src del match para que coincida con cualquier puerto fuente
-        # Solo nos importa el puerto destino
-        fm.match.tp_src = 0  # 0 significa wildcard en OpenFlow 1.0
-        
-        # Incluir buffer_id para descartar el paquete actual también
-        fm.buffer_id = event.ofp.buffer_id
-        
-        # Timeouts
         fm.idle_timeout = 120
         fm.hard_timeout = 300
-        
-        # Prioridad alta para que prevalezca sobre flows de forwarding
         fm.priority = 65535
-        
-        # NO agregamos acciones = drop
-        # Enviar al switch
-        event.connection.send(fm)
-        
-        # Log para debugging
-        tcpp = packet.find('tcp')
+        fm.buffer_id = event.ofp.buffer_id
+
+        if ipv4p and ipv4p.parsed:
+            # Para IPv4: instalar drop que incluya L4 (tp_dst), OpenFlow1.0 soporta esto en IPv4
+            fm.match = of.ofp_match.from_packet(packet)
+            try:
+                fm.match.tp_src = 0
+            except Exception:
+                pass
+            event.connection.send(fm)
+            log.warning("FIREWALL: Flow drop instalado en %s (IPv4)", switch_names.get(dpid, dpid))
+            return
+
+        # IPv6 (o no-IPv4): NO instalar flows L4 (OVS/OF1.0 ignora tp_* sobre IPv6).
+        # - Si es UDP -> bloquear en control-plane (descartar este PacketIn sin instalar flow)
+        # - Si es TCP u otro -> permitir (no instalar drop que afecte TCP)
         udpp = packet.find('udp')
+        tcpp = packet.find('tcp')
         if udpp and udpp.parsed:
-            proto_str = "UDP"
-            port_str = str(udpp.dstport)
-        elif tcpp and tcpp.parsed:
-            proto_str = "TCP"
-            port_str = str(tcpp.dstport)
+            log.warning("FIREWALL: Bloqueando paquete IPv6 UDP en control-plane (no se instala flow L4)")
+            return   # drop del paquete actual
         else:
-            proto_str = "ICMP/Other"
-            port_str = "N/A"
-        
-        log.warning("FIREWALL: Flow drop instalado en %s - proto=%s port=%s", 
-                   switch_names.get(dpid, dpid), proto_str, port_str)
-        return
+            log.info("FIREWALL: IPv6 no-UDP: no instalo flow drop (permitir forwarding)") 
+            # NO return: dejar que siga el path de forwarding        
 
     mac_to_port[dpid][src] = in_port
     

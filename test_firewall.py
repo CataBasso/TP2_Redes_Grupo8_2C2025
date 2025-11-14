@@ -7,7 +7,7 @@ Uso:
      PYTHONPATH=. python3 pox/pox.py log.level --DEBUG pox_ext.l2_learning_custom > pox.log 2>&1 &
 
   2) Ejecutar este script con sudo (Mininet necesita privilegios):
-     sudo python3 test_firewall_runner.py n
+     sudo python3 test_firewall.py n
 
 El script:
  - Arranca la topología ChainTopo(n)

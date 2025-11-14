@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
 import sys
 import time
-import os
-import re
 from mininet.net import Mininet
 from mininet.node import RemoteController, OVSSwitch
 from mininet.log import setLogLevel, info
@@ -11,7 +9,7 @@ from topologia import ChainTopo
 def safe(cmd):
     return cmd.replace('\n','; ')
 
-def run_tests(n=4):
+def run_tests(n):
     setLogLevel('info')
     topo = ChainTopo(n=int(n))
     c0 = RemoteController('c0', ip='127.0.0.1', port=6633)
@@ -111,7 +109,7 @@ def run_tests(n=4):
     info("      RESULTADOS REGLA 1\n")
     info("==============================\n")
     for name, ok in results:
-        info(" %-12s → %s\n" % (name, "OK (BLOCKED)" if ok else "FAIL (ALLOWED)"))
+        info(" %-12s → %s\n" % (name, "OK" if ok else "FAIL"))
 
     info("\n*** Tests completados ***\n")
     net.stop()
