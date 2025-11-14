@@ -179,7 +179,8 @@ mininet> h3 ping -c 3 10.0.0.4
 #### Terminal 2: Ejecutar script
 ```bash
 # Siendo n = cantidad de switches
-sudo python3 test_firewall.py n
+# Probar Regla 1 con todas sus variantes UDP/TCP , IPv4/IPv6:
+sudo python3 test_regla1.py n
 ```
 
 ### Notas importantes:

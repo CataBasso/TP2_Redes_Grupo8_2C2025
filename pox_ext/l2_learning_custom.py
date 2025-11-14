@@ -142,12 +142,20 @@ def check_firewall_rules(packet, src_mac, dst_mac, dpid):
     
     rules = firewall_config.get("rules", [])
     
-    ipp = packet.find('ipv4')
-    if not ipp or not ipp.parsed:
-        log.debug("FIREWALL: Paquete no es IP o no está parseado")
+    ipv4p = packet.find('ipv4')
+    ipv6p = packet.find('ipv6')
+    if not ipv4p and not ipv6p:
+        log.debug("FIREWALL: Paquete no es IPv4 ni IPv6")
         return False
+
+    if ipv4p:
+        src_ip = str(ipv4p.srcip)
+        dst_ip = str(ipv4p.dstip)
+    elif ipv6p:
+        src_ip = str(ipv6p.srcip)
+        dst_ip = str(ipv6p.dstip)
     
-    log.info("FIREWALL: Paquete IP - src=%s dst=%s", ipp.srcip, ipp.dstip)
+    log.info("FIREWALL: Paquete IP - src=%s dst=%s", src_ip, dst_ip)
     
     for rule in rules:
         if not rule.get("enabled", True):
@@ -290,6 +298,21 @@ def _handle_PacketIn(event):
                     learn_host_mac(dst, host_name)
             except:
                 pass
+    
+    ipv6p = packet.find('ipv6')
+    if ipv6p and ipv6p.parsed:
+        src_ip6 = str(ipv6p.srcip)
+        dst_ip6 = str(ipv6p.dstip)
+
+        # h1-h4 en IPv6 → fd00::1 , fd00::2 , etc.
+        for ip6 in [src_ip6, dst_ip6]:
+            if ip6.startswith("fd00::"):
+                try:
+                    num = int(ip6.split("::")[1], 16)
+                    if 1 <= num <= 4:
+                        learn_host_mac(src if ip6 == src_ip6 else dst, f"h{num}")
+                except:
+                    pass
     
     arpp = packet.find('arp')
     if arpp and arpp.parsed:
