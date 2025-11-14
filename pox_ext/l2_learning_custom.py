@@ -117,36 +117,25 @@ def learn_host_mac(mac, host_name):
 def check_firewall_rules(packet, src_mac, dst_mac, dpid):
     """
     Verifica si un paquete debe ser bloqueado por las reglas del firewall.
-    
-    Aplica las siguientes reglas:
-    - Bloquear paquetes con puerto destino 80
-    - Bloquear paquetes de h1 a puerto 5001 UDP
-    - Bloquear comunicación entre dos hosts específicos
-    
-    Args:
-        packet: Paquete parseado de POX
-        src_mac: MAC de origen
-        dst_mac: MAC de destino
-        dpid: Identificador del switch
-    
-    Returns:
-        True si el paquete debe ser bloqueado, False en caso contrario
+
+    Retorna:
+        La regla (dict) que matchea, o None si no coincide ninguna.
     """
     if firewall_config is None:
-        return False
-    
+        return None
+
     if not is_firewall_switch(dpid):
-        return False
-    
+        return None
+
     log.info("FIREWALL: Verificando reglas en switch %s (dpid=%s)", switch_names.get(dpid, dpid), dpid)
-    
+
     rules = firewall_config.get("rules", [])
-    
+
     ipv4p = packet.find('ipv4')
     ipv6p = packet.find('ipv6')
     if not ipv4p and not ipv6p:
         log.debug("FIREWALL: Paquete no es IPv4 ni IPv6")
-        return False
+        return None
 
     if ipv4p:
         src_ip = str(ipv4p.srcip)
@@ -154,73 +143,61 @@ def check_firewall_rules(packet, src_mac, dst_mac, dpid):
     elif ipv6p:
         src_ip = str(ipv6p.srcip)
         dst_ip = str(ipv6p.dstip)
-    
+
     log.info("FIREWALL: Paquete IP - src=%s dst=%s", src_ip, dst_ip)
-    
+
     for rule in rules:
         if not rule.get("enabled", True):
             continue
-        
+
         rule_type = rule.get("type")
-        
+
         if rule_type == "port_block":
             dst_port = rule.get("dst_port")
             if dst_port:
                 tcpp = packet.find('tcp')
                 udpp = packet.find('udp')
                 if tcpp and tcpp.parsed and tcpp.dstport == dst_port:
-                    log.warning("FIREWALL: Paquete bloqueado - Regla %d: puerto destino %d (TCP)", 
-                               rule.get("id"), dst_port)
-                    return True
+                    log.warning("FIREWALL: Regla port_block coincide (TCP) id=%s port=%s", rule.get("id"), dst_port)
+                    return rule
                 if udpp and udpp.parsed and udpp.dstport == dst_port:
-                    log.warning("FIREWALL: Paquete bloqueado - Regla %d: puerto destino %d (UDP)", 
-                               rule.get("id"), dst_port)
-                    return True
-        
+                    log.warning("FIREWALL: Regla port_block coincide (UDP) id=%s port=%s", rule.get("id"), dst_port)
+                    return rule
+
         if rule_type == "host_port_protocol_block":
             src_host = rule.get("src_host")
             dst_port = rule.get("dst_port")
             protocol = rule.get("protocol", "").upper()
-            
+
             if src_host and dst_port:
                 src_host_actual = get_host_from_mac(src_mac)
-                log.debug("FIREWALL: Regla 2 - src_host_actual=%s, src_host=%s, protocol=%s, dst_port=%d", 
-                         src_host_actual, src_host, protocol, dst_port)
-                
+                log.debug("FIREWALL: Regla host_port_protocol - src_host_actual=%s, src_host=%s, protocol=%s, dst_port=%s",
+                          src_host_actual, src_host, protocol, dst_port)
                 if src_host_actual == src_host:
-                    log.info("FIREWALL: Regla 2 - Host coincide! src_host_actual=%s == src_host=%s", 
-                            src_host_actual, src_host)
                     if protocol == "UDP":
                         udpp = packet.find('udp')
-                        log.info("FIREWALL: Regla 2 UDP - udpp=%s, parsed=%s, dstport=%s, esperado=%d", 
-                                udpp is not None, udpp.parsed if udpp else False, 
-                                udpp.dstport if udpp and udpp.parsed else None, dst_port)
                         if udpp and udpp.parsed and udpp.dstport == dst_port:
-                            log.warning("FIREWALL: Paquete bloqueado - Regla %d: %s -> puerto %d (UDP)", 
-                                       rule.get("id"), src_host, dst_port)
-                            return True
-                        else:
-                            log.info("FIREWALL: Regla 2 UDP - No coincide: dstport=%s != %d o no parseado", 
-                                    udpp.dstport if udpp and udpp.parsed else None, dst_port)
-        
+                            log.warning("FIREWALL: Regla host_port_protocol_block coincide (UDP) id=%s", rule.get("id"))
+                            return rule
+                    elif protocol == "TCP":
+                        tcpp = packet.find('tcp')
+                        if tcpp and tcpp.parsed and tcpp.dstport == dst_port:
+                            log.warning("FIREWALL: Regla host_port_protocol_block coincide (TCP) id=%s", rule.get("id"))
+                            return rule
+
         if rule_type == "host_pair_block":
             host1 = rule.get("host1")
             host2 = rule.get("host2")
-            
             if host1 and host2:
                 src_host = get_host_from_mac(src_mac)
                 dst_host = get_host_from_mac(dst_mac)
-                
-                log.debug("FIREWALL: Verificando regla 3 - src_host=%s, dst_host=%s, host1=%s, host2=%s", 
-                         src_host, dst_host, host1, host2)
-                
-                if (src_host == host1 and dst_host == host2) or \
-                   (src_host == host2 and dst_host == host1):
-                    log.warning("FIREWALL: Paquete bloqueado - Regla %d: comunicación entre %s y %s", 
-                               rule.get("id"), host1, host2)
-                    return True
-    
-    return False
+                log.debug("FIREWALL: Verificando regla host_pair - src_host=%s, dst_host=%s, host1=%s, host2=%s",
+                          src_host, dst_host, host1, host2)
+                if (src_host == host1 and dst_host == host2) or (src_host == host2 and dst_host == host1):
+                    log.warning("FIREWALL: Regla host_pair_block coincide id=%s", rule.get("id"))
+                    return rule
+
+    return None
 
 def _handle_ConnectionUp(event):
     """
@@ -320,40 +297,90 @@ def _handle_PacketIn(event):
                     except:
                         pass
 
-    if check_firewall_rules(packet, src, dst, dpid):
+    matched_rule = check_firewall_rules(packet, src, dst, dpid)
+    if matched_rule:
+        rule_type = matched_rule.get("type")
         ipv4p = packet.find('ipv4')
         ipv6p = packet.find('ipv6')
+        udpp = packet.find('udp')
+        tcpp = packet.find('tcp')
 
-        # Preparar flow_mod base para IPv4 drops
         fm = of.ofp_flow_mod()
         fm.idle_timeout = 120
         fm.hard_timeout = 300
         fm.priority = 65535
         fm.buffer_id = event.ofp.buffer_id
 
-        if ipv4p and ipv4p.parsed:
-            # Para IPv4: instalar drop que incluya L4 (tp_dst), OpenFlow1.0 soporta esto en IPv4
-            fm.match = of.ofp_match.from_packet(packet)
-            try:
-                fm.match.tp_src = 0
-            except Exception:
-                pass
-            event.connection.send(fm)
-            log.warning("FIREWALL: Flow drop instalado en %s (IPv4)", switch_names.get(dpid, dpid))
-            return
+        # Port block -> match by ethertype (IPv4) + proto + tp_dst when possible
+        if rule_type == "port_block":
+            dst_port = matched_rule.get("dst_port")
+            fm.match = of.ofp_match()
+            if ipv4p and (tcpp and tcpp.parsed or udpp and udpp.parsed):
+                fm.match.dl_type = 0x0800
+                if tcpp and tcpp.parsed:
+                    fm.match.nw_proto = 6
+                    fm.match.tp_dst = tcpp.dstport
+                elif udpp and udpp.parsed:
+                    fm.match.nw_proto = 17
+                    fm.match.tp_dst = udpp.dstport
+                try:
+                    fm.match.nw_dst = ipv4p.dstip
+                except:
+                    pass
+            elif ipv6p:
+                # IPv6 port-block: avoid L4 match if switch/OpenFlow version can't; do match by dl_type + MACs
+                fm.match.dl_type = 0x86dd
+                fm.match.dl_src = src
+                fm.match.dl_dst = dst
+            else:
+                fm.match.dl_src = src
+                fm.match.dl_dst = dst
 
-        # IPv6 (o no-IPv4): NO instalar flows L4 (OVS/OF1.0 ignora tp_* sobre IPv6).
-        # - Si es UDP -> bloquear en control-plane (descartar este PacketIn sin instalar flow)
-        # - Si es TCP u otro -> permitir (no instalar drop que afecte TCP)
-        udpp = packet.find('udp')
-        tcpp = packet.find('tcp')
-        if udpp and udpp.parsed:
-            log.warning("FIREWALL: Bloqueando paquete IPv6 UDP en control-plane (no se instala flow L4)")
-            return   # drop del paquete actual
+        # Host+port+protocol block -> restrict by dl_src and appropriate ethertype + L4 if IPv4
+        elif rule_type == "host_port_protocol_block":
+            protocol = matched_rule.get("protocol", "").upper()
+            dst_port = matched_rule.get("dst_port")
+            fm.match = of.ofp_match()
+            fm.match.dl_src = src
+            if ipv4p:
+                fm.match.dl_type = 0x0800
+                if protocol == "UDP":
+                    fm.match.nw_proto = 17
+                    fm.match.tp_dst = udpp.dstport if udpp and udpp.parsed else dst_port
+                    try: fm.match.nw_dst = ipv4p.dstip
+                    except: pass
+                elif protocol == "TCP":
+                    fm.match.nw_proto = 6
+                    fm.match.tp_dst = tcpp.dstport if tcpp and tcpp.parsed else dst_port
+            elif ipv6p:
+                # IPv6: match by dl_type + src MAC + dst MAC (can't rely on tp_* on OF1.0)
+                fm.match.dl_type = 0x86dd
+                fm.match.dl_src = src
+                fm.match.dl_dst = dst
+
+        # Host pair block -> block all traffic between two hosts for both IPv4 and IPv6
+        elif rule_type == "host_pair_block":
+            fm.match = of.ofp_match()
+            # match both directions: we install one directional drop here (controller sees both directions)
+            fm.match.dl_src = src
+            fm.match.dl_dst = dst
+            if ipv4p:
+                fm.match.dl_type = 0x0800
+            elif ipv6p:
+                fm.match.dl_type = 0x86dd
+
         else:
-            log.info("FIREWALL: IPv6 no-UDP: no instalo flow drop (permitir forwarding)") 
-            # NO return: dejar que siga el path de forwarding        
+            fm.match = of.ofp_match()
+            fm.match.dl_src = src
+            fm.match.dl_dst = dst
 
+        try:
+            event.connection.send(fm)
+            log.warning("FIREWALL: Flow drop instalado en %s para regla id=%s", switch_names.get(dpid, dpid), matched_rule.get("id"))
+        except Exception as e:
+            log.error("FIREWALL: Error instalando flow drop: %s", e)
+        return
+    
     mac_to_port[dpid][src] = in_port
     
     switch_name = switch_names.get(dpid, dpid)
