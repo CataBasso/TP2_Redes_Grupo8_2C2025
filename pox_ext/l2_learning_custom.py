@@ -5,6 +5,7 @@ from pox.lib.packet.ethernet import ethernet
 import pox.lib.packet as pkt
 import json
 import os
+import signal
 
 log = core.getLogger("l2_learning_custom")
 
@@ -23,6 +24,22 @@ def reset_switch_counter():
     switch_counter = 0
     switch_names = {}
     firewall_flows_installed = set()
+
+def reset_state():
+    """
+    Resetea todo el estado en memoria del módulo: tablas de aprendizaje,
+    mapeos host<->mac, contadores y flows instalados.
+
+    Esto permite ejecutar tests repetidos sin reiniciar el proceso POX.
+    """
+    global mac_to_port, switch_names, switch_counter, host_to_mac, mac_to_host, firewall_flows_installed
+    mac_to_port = {}
+    switch_names = {}
+    switch_counter = 0
+    host_to_mac = {"h1": None, "h2": None, "h3": None, "h4": None}
+    mac_to_host = {}
+    firewall_flows_installed = set()
+    log.info("l2_learning_custom: Estado interno reseteado (reset_state)")
 
 host_to_mac = {
     "h1": None,
@@ -432,3 +449,19 @@ def launch():
     core.openflow.addListenerByName("PacketIn", _handle_PacketIn)
     core.openflow.addListenerByName("PortStatus", _handle_PortStatus)
     log.info("l2_learning_custom cargado (con logging DEBUG en pox log.level)")
+
+    # Registrar handler para SIGHUP: permite resetear el estado interno sin
+    # reiniciar todo el proceso POX. Útil para ejecutar tests repetidos.
+    def _handle_sighup(signum, frame):
+        try:
+            reset_state()
+        except Exception as e:
+            log.error("Error al resetear estado en SIGHUP: %s", e)
+
+    try:
+        signal.signal(signal.SIGHUP, _handle_sighup)
+        log.info("l2_learning_custom: SIGHUP handler instalado - usa 'kill -HUP <pox_pid>' para resetear estado")
+    except Exception:
+        # En algunos entornos (p. ej. cuando POX se ejecuta en entornos especiales)
+        # puede no ser posible instalar handlers de señal; no es crítico.
+        log.debug("l2_learning_custom: No se pudo instalar handler SIGHUP")
