@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+regl#!/usr/bin/env python3
 import sys
 import time
 from mininet.net import Mininet
