@@ -322,80 +322,107 @@ def _handle_PacketIn(event):
         udpp = packet.find('udp')
         tcpp = packet.find('tcp')
 
-        fm = of.ofp_flow_mod()
-        fm.idle_timeout = 120
-        fm.hard_timeout = 300
-        fm.priority = 65535
-        fm.buffer_id = event.ofp.buffer_id
-
-        # Port block -> match by ethertype (IPv4) + proto + tp_dst when possible
+        # Regla port_block: instalar flow que bloquea el puerto específico
         if rule_type == "port_block":
             dst_port = matched_rule.get("dst_port")
-            fm.match = of.ofp_match()
-            if ipv4p and (tcpp and tcpp.parsed or udpp and udpp.parsed):
+            
+            log.warning("FIREWALL: REGLA 1 ACTIVADA - puerto destino %s detectado (ipv4=%s, tcp=%s, udp=%s)", 
+                       dst_port, ipv4p is not None, tcpp and tcpp.parsed, udpp and udpp.parsed)
+            
+            # Para IPv4, instalamos flows específicos por protocolo y puerto
+            if ipv4p and ((tcpp and tcpp.parsed) or (udpp and udpp.parsed)):
+                fm = of.ofp_flow_mod()
+                fm.idle_timeout = 120
+                fm.hard_timeout = 300
+                fm.priority = 65535
+                fm.match = of.ofp_match()
                 fm.match.dl_type = 0x0800
+                
                 if tcpp and tcpp.parsed:
                     fm.match.nw_proto = 6
                     fm.match.tp_dst = tcpp.dstport
+                    log.warning("FIREWALL: Instalando flow DROP para TCP puerto %s", tcpp.dstport)
                 elif udpp and udpp.parsed:
                     fm.match.nw_proto = 17
                     fm.match.tp_dst = udpp.dstport
+                    log.warning("FIREWALL: Instalando flow DROP para UDP puerto %s", udpp.dstport)
+                
                 try:
-                    fm.match.nw_dst = ipv4p.dstip
-                except:
-                    pass
-            elif ipv6p:
-                # IPv6 port-block: avoid L4 match if switch/OpenFlow version can't; do match by dl_type + MACs
-                fm.match.dl_type = 0x86dd
-                fm.match.dl_src = src
-                fm.match.dl_dst = dst
+                    event.connection.send(fm)
+                    log.warning("FIREWALL: ✓ Flow drop instalado en %s para regla id=%s (port_block: puerto %s)", 
+                               switch_names.get(dpid, dpid), matched_rule.get("id"), dst_port)
+                except Exception as e:
+                    log.error("FIREWALL: ✗ Error instalando flow drop: %s", e)
             else:
-                fm.match.dl_src = src
-                fm.match.dl_dst = dst
-
-        # Host+port+protocol block -> restrict by dl_src and appropriate ethertype + L4 if IPv4
+                # Para IPv6 o casos sin L4, drop solo este paquete
+                log.warning("FIREWALL: Paquete dropeado directamente - Regla %s (port_block: puerto %s)", 
+                           matched_rule.get("id"), dst_port)
+            return
+        
         elif rule_type == "host_port_protocol_block":
-            protocol = matched_rule.get("protocol", "").upper()
             dst_port = matched_rule.get("dst_port")
-            fm.match = of.ofp_match()
-            fm.match.dl_src = src
-            if ipv4p:
+            protocol = matched_rule.get("protocol", "").upper()
+            
+            # Para IPv4, instalamos flow específico con puerto y protocolo
+            if ipv4p and ((protocol == "UDP" and udpp and udpp.parsed) or 
+                         (protocol == "TCP" and tcpp and tcpp.parsed)):
+                fm = of.ofp_flow_mod()
+                fm.idle_timeout = 120
+                fm.hard_timeout = 300
+                fm.priority = 65535
+                fm.buffer_id = event.ofp.buffer_id
+                fm.match = of.ofp_match()
                 fm.match.dl_type = 0x0800
-                if protocol == "UDP":
-                    fm.match.nw_proto = 17
-                    fm.match.tp_dst = udpp.dstport if udpp and udpp.parsed else dst_port
-                    try: fm.match.nw_dst = ipv4p.dstip
-                    except: pass
-                elif protocol == "TCP":
-                    fm.match.nw_proto = 6
-                    fm.match.tp_dst = tcpp.dstport if tcpp and tcpp.parsed else dst_port
-            elif ipv6p:
-                # IPv6: match by dl_type + src MAC + dst MAC (can't rely on tp_* on OF1.0)
-                fm.match.dl_type = 0x86dd
                 fm.match.dl_src = src
-                fm.match.dl_dst = dst
+                
+                if protocol == "UDP" and udpp and udpp.parsed:
+                    fm.match.nw_proto = 17
+                    fm.match.tp_dst = udpp.dstport
+                elif protocol == "TCP" and tcpp and tcpp.parsed:
+                    fm.match.nw_proto = 6
+                    fm.match.tp_dst = tcpp.dstport
+                
+                try:
+                    event.connection.send(fm)
+                    log.warning("FIREWALL: Flow drop instalado en %s para regla id=%s (%s:%s %s)", 
+                               switch_names.get(dpid, dpid), matched_rule.get("id"),
+                               matched_rule.get("src_host"), dst_port, protocol)
+                except Exception as e:
+                    log.error("FIREWALL: Error instalando flow drop: %s", e)
+            else:
+                # Para IPv6 o casos donde no podemos parsear L4, solo drop del paquete
+                log.warning("FIREWALL: Paquete dropeado - Regla %s (host_port_protocol): %s→%s %s", 
+                           matched_rule.get("id"), matched_rule.get("src_host"), 
+                           dst_port, protocol)
+            return
 
-        # Host pair block -> block all traffic between two hosts for both IPv4 and IPv6
+        # Host pair block -> instalar flow que bloquea todo entre dos hosts
         elif rule_type == "host_pair_block":
+            fm = of.ofp_flow_mod()
+            fm.idle_timeout = 120
+            fm.hard_timeout = 300
+            fm.priority = 65535
+            fm.buffer_id = event.ofp.buffer_id
             fm.match = of.ofp_match()
-            # match both directions: we install one directional drop here (controller sees both directions)
             fm.match.dl_src = src
             fm.match.dl_dst = dst
+            
             if ipv4p:
                 fm.match.dl_type = 0x0800
             elif ipv6p:
                 fm.match.dl_type = 0x86dd
-
-        else:
-            fm.match = of.ofp_match()
-            fm.match.dl_src = src
-            fm.match.dl_dst = dst
-
-        try:
-            event.connection.send(fm)
-            log.warning("FIREWALL: Flow drop instalado en %s para regla id=%s", switch_names.get(dpid, dpid), matched_rule.get("id"))
-        except Exception as e:
-            log.error("FIREWALL: Error instalando flow drop: %s", e)
+            
+            try:
+                event.connection.send(fm)
+                log.warning("FIREWALL: Flow drop instalado en %s para regla id=%s (host_pair: %s↔%s)", 
+                           switch_names.get(dpid, dpid), matched_rule.get("id"),
+                           matched_rule.get("host1"), matched_rule.get("host2"))
+            except Exception as e:
+                log.error("FIREWALL: Error instalando flow drop: %s", e)
+            return
+        
+        # Si no matcheó ningún tipo conocido, drop el paquete
+        log.warning("FIREWALL: Paquete dropeado - Regla desconocida id=%s", matched_rule.get("id"))
         return
     
     mac_to_port[dpid][src] = in_port
