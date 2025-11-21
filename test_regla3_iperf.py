@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """
 Test de Regla 3 con iperf: Bloquear comunicación h1 ↔ h3
-Replica exactamente test_regla3.py pero con iperf donde sea posible
 """
 import sys
 import time

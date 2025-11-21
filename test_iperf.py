@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-TEST DEFINITIVO: Validación de Firewall con Iperf.
-Este script prueba las 3 reglas secuencialmente, evitando conflictos de topología.
+TEST COMPLETO: Validación de Firewall con Iperf.
+Este script prueba las 3 reglas secuencialmente.
 """
 import sys
 import time
@@ -10,6 +10,18 @@ from mininet.net import Mininet
 from mininet.node import RemoteController, OVSSwitch
 from mininet.log import setLogLevel, info
 from topologia import ChainTopo
+
+# Códigos de color ANSI para la terminal
+class BColors:
+    HEADER = '\033[95m'
+    OKBLUE = '\033[94m'
+    OKCYAN = '\033[96m'
+    OKGREEN = '\033[92m'
+    WARNING = '\033[93m'
+    FAIL = '\033[91m'
+    ENDC = '\033[0m'
+    BOLD = '\033[1m'
+    UNDERLINE = '\033[4m'
 
 def run_consolidated_tests(n):
     setLogLevel('info')
@@ -40,9 +52,7 @@ def run_consolidated_tests(n):
     # ============================================================
     # PARTE 1: REGLA 1 (Puerto 80)
     # ============================================================
-    info("\n" + "="*60 + "\n")
-    info("   REGLA 1: Puerto 80 BLOQUEADO (h2->h3)\n")
-    info("="*60 + "\n")
+    info(f"\n{BColors.HEADER}===== REGLA 1: PUERTO 80 - BLOQUEADO) ====={BColors.ENDC}\n")
 
     # Test 1.1: TCP puerto 80 (bloqueado)
     info("\nTest 1.1: h2 → h3:80 TCP (debe BLOQUEARSE)\n")
@@ -54,7 +64,11 @@ def run_consolidated_tests(n):
     output = h2.cmd("timeout 4 iperf -c 10.0.0.3 -p 80 -t 2 2>&1 || true")
     blocked = "connect failed" in output.lower() or "connection refused" in output.lower() or len(output.strip()) == 0
     results.append(("R1: TCP Port 80", blocked))
-    info(f"Resultado: {'✓ BLOQUEADO' if blocked else '✗ PERMITIDO'}\n")
+    if blocked:
+        res_msg = f"{BColors.OKGREEN}✓ BLOQUEADO (Correcto){BColors.ENDC}"
+    else:
+        res_msg = f"{BColors.FAIL}✗ PERMITIDO (Fallo){BColors.ENDC}"
+    info(f"  Resultado: {res_msg}\n")
     h3.cmd("pkill -9 iperf || true")
 
     # Test 1.2: Puerto 8000 TCP (permitido)
@@ -67,16 +81,18 @@ def run_consolidated_tests(n):
     output = h2.cmd("timeout 4 iperf -c 10.0.0.3 -p 8000 -t 2 2>&1 || true")
     allowed = "bits/sec" in output or "Mbits/sec" in output
     results.append(("R1: TCP Port 8000 Allowed", allowed))
-    info(f"Resultado: {'✓ PERMITIDO' if allowed else '✗ BLOQUEADO'}\n")
+    if allowed:
+        res_msg = f"{BColors.OKGREEN}✓ PERMITIDO (Correcto){BColors.ENDC}"
+    else:
+        res_msg = f"{BColors.FAIL}✗ BLOQUEADO (Fallo){BColors.ENDC}"
+    info(f"  Resultado: {res_msg}\n")
     h3.cmd("pkill -9 iperf || true")
 
     # ============================================================
     # PARTE 2: REGLA 2 (UDP 5001)
-    # Estrategia: h1 -> h4
     # ============================================================
-    info("\n" + "="*60 + "\n")
-    info("   REGLA 2: h1 → 5001 UDP BLOQUEADO\n")
-    info("="*60 + "\n")
+    info(f"\n{BColors.HEADER}===== REGLA 2: h1 → 5001 CON UDP - BLOQUEADO) ====={BColors.ENDC}\n")
+
 
     # TEST 2.1: IPv4 UDP h1→h4:5001 (debe bloquearse)
     info("\nTest 2.1: IPv4 + UDP h1→h4:5001 (debe BLOQUEARSE)\n")
@@ -89,7 +105,11 @@ def run_consolidated_tests(n):
     server_log = h4.cmd("cat /tmp/iperf_5001_udp_v4.log 2>/dev/null || true")
     no_data = "bits/sec" not in server_log
     results.append(("R2: IPv4 UDP 5001", no_data))
-    info(f"Resultado: {'✓ BLOQUEADO' if no_data else '✗ PERMITIDO'}\n")
+    if no_data:
+        res_msg = f"{BColors.OKGREEN}✓ BLOQUEADO (Correcto){BColors.ENDC}"
+    else:
+        res_msg = f"{BColors.FAIL}✗ PERMITIDO (Fallo){BColors.ENDC}"
+    info(f"  Resultado: {res_msg}\n")
     h4.cmd("pkill -9 iperf || true")
 
     # TEST 2.2: IPv6 UDP h1→h4:5001 (debe bloquearse)
@@ -103,7 +123,11 @@ def run_consolidated_tests(n):
     server_log = h4.cmd("cat /tmp/iperf_5001_udp_v6.log 2>/dev/null || true")
     no_data = "bits/sec" not in server_log
     results.append(("R2: IPv6 UDP 5001", no_data))
-    info(f"Resultado: {'✓ BLOQUEADO' if no_data else '✗ PERMITIDO'}\n")
+    if no_data:
+        res_msg = f"{BColors.OKGREEN}✓ BLOQUEADO (Correcto){BColors.ENDC}"
+    else:
+        res_msg = f"{BColors.FAIL}✗ PERMITIDO (Fallo){BColors.ENDC}"
+    info(f"  Resultado: {res_msg}\n")
     h4.cmd("pkill -9 iperf || true")
 
     # TEST 2.3: IPv4 TCP h1→h4:5001 (debe permitirse)
@@ -116,15 +140,17 @@ def run_consolidated_tests(n):
     output = h1.cmd("timeout 5 iperf -c 10.0.0.4 -p 5001 -t 1 2>&1 || true")
     allowed = "bits/sec" in output or "Mbits/sec" in output
     results.append(("R2: IPv4 TCP 5001 Allowed", allowed))
-    info(f"Resultado: {'✓ PERMITIDO' if allowed else '✗ BLOQUEADO'}\n")
+    if allowed:
+        res_msg = f"{BColors.OKGREEN}✓ PERMITIDO (Correcto){BColors.ENDC}"
+    else:
+        res_msg = f"{BColors.FAIL}✗ BLOQUEADO (Fallo){BColors.ENDC}"
+    info(f"  Resultado: {res_msg}\n")
     h4.cmd("pkill -9 iperf || true")
 
     # ============================================================
     # PARTE 3: REGLA 3 (h1 <-> h3)
     # ============================================================
-    info("\n" + "="*60 + "\n")
-    info("   REGLA 3: Bloqueo h1 ↔ h3\n")
-    info("="*60 + "\n")
+    info(f"\n{BColors.HEADER}===== REGLA 3: h1 ↔ h3 - BLOQUEADO) ====={BColors.ENDC}\n")
 
     # TEST 3.1: IPv4 ping h1→h3 (debe bloquearse)
     info("\nTest 3.1: IPv4 ping h1 → h3 (debe BLOQUEARSE)\n")
@@ -133,7 +159,11 @@ def run_consolidated_tests(n):
     loss = int(m.group(1)) if m else None
     blocked = (loss == 100)
     results.append(("R3: IPv4 ping h1->h3", blocked))
-    info(f"Resultado: {'✓ BLOQUEADO' if blocked else '✗ PERMITIDO'} (loss={loss}%)\n")
+    if blocked:
+        res_msg = f"{BColors.OKGREEN}✓ BLOQUEADO (Correcto){BColors.ENDC}"
+    else:
+        res_msg = f"{BColors.FAIL}✗ PERMITIDO (Fallo){BColors.ENDC}"
+    info(f"  Resultado: {res_msg}\n")
 
     # TEST 3.2: IPv4 TCP h1→h3 con iperf (debe bloquearse)
     info("\nTest 3.2: IPv4 TCP (iperf) h1 → h3 (debe BLOQUEARSE)\n")
@@ -144,40 +174,52 @@ def run_consolidated_tests(n):
     out = h1.cmd("timeout 2 iperf -c 10.0.0.3 -p 8081 -t 1 2>&1 || true")
     blocked = "connect failed" in out.lower() or "connection refused" in out.lower() or len(out.strip()) == 0
     results.append(("R3: IPv4 TCP h1->h3", blocked))
-    info(f"Resultado: {'✓ BLOQUEADO' if blocked else '✗ PERMITIDO'}\n")
+    if blocked:
+        res_msg = f"{BColors.OKGREEN}✓ BLOQUEADO (Correcto){BColors.ENDC}"
+    else:
+        res_msg = f"{BColors.FAIL}✗ PERMITIDO (Fallo){BColors.ENDC}"
+    info(f"  Resultado: {res_msg}\n")
     h3.cmd("pkill -9 iperf || true")
 
     # ========================================
     # RESUMEN FINAL
     # ========================================
-    info("\n" + "="*60 + "\n")
-    info("                RESUMEN FINAL\n")
-    info("="*60 + "\n")
+    print("\n" + "="*60)
+    print(f"{BColors.BOLD}          REPORTE FINAL DE EJECUCIÓN{BColors.ENDC}")
+    print("="*60)
     
     passed = 0
     for test_name, ok in results:
-        symbol = "✓" if ok else "✗"
-        status_text = "PASSED" if ok else "FAILED"
-        info(f"  {symbol} {test_name:30s} → {status_text}\n")
         if ok:
+            status = f"{BColors.OKGREEN}[ PASS ]{BColors.ENDC}"
             passed += 1
+        else:
+            status = f"{BColors.FAIL}[ FAIL ]{BColors.ENDC}"
+        
+        print(f" {test_name:.<45} {status}")
     
-    info("\n" + "-"*60 + "\n")
-    info(f"  Total Tests: {len(results)}\n")
-    info(f"  Pasados:     {passed}\n")
-    info(f"  Fallados:    {len(results) - passed}\n")
-    info("="*60 + "\n")
+    print("-" * 60)
+    
+    total = len(results)
+    print(f" Total Tests: {total}")
+    print(f" Pasados:     {BColors.OKGREEN}{passed}{BColors.ENDC}")
+    print(f" Fallados:    {BColors.FAIL}{total - passed}{BColors.ENDC}")
+    print("-" * 60)
+
+    if passed == total:
+        print(f"\n{BColors.OKGREEN}{BColors.BOLD}>>> RESULTADO FINAL: TODO OK (SUCCESS) <<<{BColors.ENDC}\n")
+    else:
+        print(f"\n{BColors.FAIL}{BColors.BOLD}>>> RESULTADO FINAL: REVISAR ERRORES (FAILURE) <<<{BColors.ENDC}\n")
 
     # Cleanup
     for h in [h1, h2, h3, h4]:
         h.cmd("pkill -9 iperf || true")
     
     net.stop()
-    info("\n*** Tests completados ***\n")
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Uso: sudo python3 test_definitivo.py <num_switches>")
+        print("Uso: sudo python3 test_iperf.py <num_switches>")
         sys.exit(1)
     
     n = int(sys.argv[1])

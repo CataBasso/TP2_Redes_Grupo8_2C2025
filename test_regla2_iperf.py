@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """
 Test de Regla 2 con iperf: Bloquear h1 → puerto 5001 UDP
-Replica exactamente test_regla2.py pero con iperf
 """
 import sys
 import time

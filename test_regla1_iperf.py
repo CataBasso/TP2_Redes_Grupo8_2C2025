@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """
 Test de Regla 1 con iperf: Bloquear puerto 80
-Replica exactamente test_regla1.py pero con iperf
 """
 import sys
 import time
